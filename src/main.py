@@ -4,6 +4,7 @@ import logging
 import threading
 from PySide6 import QtCore, QtWidgets, QtGui
 from PySide6.QtWidgets import QDialog
+import random
 
 
 class Worker(QtCore.QObject):
@@ -35,6 +36,7 @@ class Searchbar(QtWidgets.QWidget):
         self.searchField = QtWidgets.QLineEdit("Search for process...")
 
         self.searchButton = QtWidgets.QPushButton("🔎")
+        self.searchButton.setToolTip("Search matching pattern")
 
         self.clearButton = QtWidgets.QPushButton("🆑")
         self.clearButton.setToolTip("Clear search bar")
@@ -69,8 +71,11 @@ class QTextEditLogger(logging.Handler):
         self.lineCnt = 0
         self.high_lines = 0
         # yellow tones
+        self.user_color = QtGui.QColor('yellow') # default highlight color
+        self.color_tones = []
+        self.update_color_tones()
         self.yellow_tones = [QtGui.QColor(255, 255, 204, 255), QtGui.QColor(255, 247, 0, 255), QtGui.QColor(255, 215, 0, 255), QtGui.QColor(204, 153, 0, 255), QtGui.QColor(184, 134, 11, 255)]
-        self.yellow_cnt = 0
+        self.tone_cnt = 0
 
     def emit(self, record):
         self.lineCnt += 1
@@ -80,13 +85,34 @@ class QTextEditLogger(logging.Handler):
     def getWidget(self):
         return self.widget
     
+    def setUserColor(self, picked_color: QtGui.QColor):
+        self.user_color = picked_color
+        self.update_color_tones()
+
+    def update_color_tones(self):
+
+        base_h, base_s, base_l, _ = self.user_color.getHsl()
+
+        self.color_tones = []
+        for i in range(5):
+            # Slightly tweak hue, saturation, and lightness
+            hue_variation = (base_h + random.randint(-10, 10)) % 360
+            sat_variation = max(0, min(255, base_s + random.randint(-30, 30)))
+            light_variation = max(0, min(255, base_l + random.randint(-40, 40)))
+
+            variant = QtGui.QColor()
+            variant.setHsl(hue_variation, sat_variation, light_variation)
+            self.color_tones.append(variant)
+
+        return
+    
     def highlightLine(self, searchString):
 
         highlight_fmt = QtGui.QTextCharFormat()
         # highlight_fmt.setBackground(QtGui.QColor("yellow"))
-        highlight_fmt.setBackground(self.yellow_tones[self.yellow_cnt])
-        self.yellow_cnt += 1
-        self.yellow_cnt %= len(self.yellow_tones)
+        highlight_fmt.setBackground(self.color_tones[self.tone_cnt])
+        self.tone_cnt += 1
+        self.tone_cnt %= len(self.color_tones)
 
         cursor = self.widget.textCursor()
         # get default text format
@@ -103,7 +129,7 @@ class QTextEditLogger(logging.Handler):
 
             if searchString.lower() in line_text.lower().replace(".", " "):
                 # if line was already highlighted, then ignore incrementing counter
-                if cursor.charFormat().background().color().name() in [i.name() for i in self.yellow_tones]:
+                if cursor.charFormat().background().color().name() in [i.name() for i in self.color_tones]:
                     #"#ffff00":
                     pass
                 else:
@@ -163,6 +189,19 @@ class MyDialog(QtWidgets.QDialog, QtWidgets.QPlainTextEdit):
 
         self.posted_lines_cnt = 0
 
+        self.user_color = QtGui.QColor()
+
+        # menubar
+        self.menubar = QtWidgets.QMenuBar()
+        self.menubar.setMinimumWidth(self.width())
+
+        self.tools_menu = self.menubar.addMenu('Tools')
+
+        color_action = QtGui.QAction('Choose highlight color...', self)
+        color_action.triggered.connect(self.color_palette_picker)
+
+        self.tools_menu.addAction(color_action)
+
         # searchbar
         self.searchBar = Searchbar(self)
         self.searchButt = self.searchBar.getSearchButton()
@@ -172,6 +211,7 @@ class MyDialog(QtWidgets.QDialog, QtWidgets.QPlainTextEdit):
         self.CLButton.clicked.connect(self.clearEditField)
 
         self.ctrlAButt = QtWidgets.QPushButton("🗒️", self)
+        self.ctrlAButt.setToolTip("Copy to clipboard")
         self.ctrlAButt.clicked.connect(self.copyAll)
 
         self.logTextBox = QTextEditLogger(self)
@@ -182,6 +222,9 @@ class MyDialog(QtWidgets.QDialog, QtWidgets.QPlainTextEdit):
         logging.getLogger().setLevel(logging.DEBUG)
 
         self.layout = QtWidgets.QVBoxLayout()
+        # First add menubar
+        self.layout.setMenuBar(self.menubar)
+
         self.top_hbox = QtWidgets.QHBoxLayout()
         self.top_hbox.addWidget(self.searchBar)
         self.top_hbox.addWidget(self.ctrlAButt)
@@ -212,6 +255,19 @@ class MyDialog(QtWidgets.QDialog, QtWidgets.QPlainTextEdit):
         self.worker_thread = threading.Thread(target=self.worker.run, daemon=True)
         self.worker_thread.start()
 
+    # capture resize event
+    def resizeEvent(self, event):
+        self.menubar.setMinimumWidth(self.width())
+        super().resizeEvent(event)
+
+
+    def color_palette_picker(self):
+        self.user_color = QtWidgets.QColorDialog.getColor()
+        if self.user_color.isValid():
+            hex_color = self.user_color.name()  # Gets hex code like "#ff5733"
+            print("Selected Color", f"You picked: {hex_color}")
+        # update QTextEditLogger
+        self.logTextBox.setUserColor(self.user_color)
 
     # log with severity 'info'
     def post(self, text):

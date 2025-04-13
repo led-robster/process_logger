@@ -14,3 +14,6 @@ when closing the application, it takes several seconds to close the worker threa
 TODO
 
 [X] copy all button into clipboard
+[X] give the user the possibility to choose highlight color
+[] add possibility to filter out insisting processes like chrome :) ==> whitelist and blacklist
+[] add icon
